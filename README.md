@@ -29,7 +29,7 @@ python publisher.py --all --interval 2             # 12 IoT sensor nodes (12 cit
 # or one node only: python publisher.py --city Bhopal --interval 2
 python app.py                                       # backend + dashboard
 ```
-Open http://127.0.0.1:5000
+Open http://127.0.0.1:5001/
 
 Without internet or broker: `$env:SOURCE="local"; python app.py` (add `$env:CITIES="Bhopal"` for a single city)
 Force dataset replay: `$env:MODE="replay"`
