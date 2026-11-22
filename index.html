@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intelligent Air Quality Monitoring and Pollution Prediction System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0b1220;--card:#131c2f;--line:#223049;--tx:#e8eefc;--mut:#8fa1c2;--acc:#38bdf8}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:8px}
+h1{font-size:20px;margin:0}h1 span{color:var(--acc)}
+.chip{font-size:12px;color:var(--mut);background:var(--card);border:1px solid var(--line);padding:6px 10px;border-radius:20px}
+main{max-width:1150px;margin:0 auto;padding:22px;display:grid;gap:16px}
+.row{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+.lbl{font-size:12px;letter-spacing:.08em;color:var(--mut);text-transform:uppercase;margin-bottom:8px}
+.big{font-size:56px;font-weight:700;line-height:1}.cat{font-weight:600;margin-top:6px}
+.sub{color:var(--mut);font-size:13px;margin-top:8px}
+.pol{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.pol div{background:#0e1627;border:1px solid var(--line);border-radius:10px;padding:10px}
+.pol b{font-size:20px;display:block}.pol small{color:var(--mut)}
+#banner{display:none;padding:14px 18px;border-radius:12px;font-weight:600}
+.warning{background:#4a3410;border:1px solid #e6a23c;color:#ffd28a}
+.critical{background:#4a1520;border:1px solid #e74c3c;color:#ffb3bd}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:8px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:500}tr.best td{color:var(--acc);font-weight:600}
+ul{margin:0;padding-left:18px;font-size:14px;line-height:1.7}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--mut)}
+.flow b{background:#0e1627;border:1px solid var(--line);color:var(--tx);padding:6px 10px;border-radius:8px;font-weight:500}
+</style></head><body>
+<header><h1>Intelligent Air Quality Monitoring <span>&amp; Pollution Prediction</span> <small style="color:var(--mut);font-weight:400;display:block;font-size:12px">Using IoT and Machine Learning</small></h1>
+<div><select id="citysel" class="chip" onchange="sel=this.value;tick()"></select> <span class="chip" id="mode">Data: -</span> <span class="chip" id="src">Source: connecting...</span></div></header>
+<main>
+<div id="banner"></div>
+<div class="row">
+ <div class="card"><div class="lbl">Current AQI (sensor)</div><div class="big" id="aqi">--</div><div class="cat" id="cat"></div><div class="sub" id="date"></div></div>
+ <div class="card"><div class="lbl">Predicted AQI - tomorrow</div><div class="big" id="pred">--</div><div class="cat" id="pcat"></div><div class="sub" id="advice"></div></div>
+ <div class="card"><div class="lbl">Active alerts</div><ul id="alerts"><li style="color:var(--mut)">No alerts yet</li></ul></div>
+</div>
+<div class="card"><div class="lbl">Live pollutant readings (ug/m3; CO in mg/m3)</div><div class="pol" id="pol"></div></div>
+<div class="card"><div class="lbl">Live trend: measured AQI vs forecast (last point = tomorrow)</div><canvas id="chart" height="95"></canvas></div>
+<div class="card"><div class="lbl">All monitored cities (click a row to open)</div><table id="ct"></table></div>
+<div class="row">
+ <div class="card" style="grid-column:span 2"><div class="lbl">Model comparison (time-based test split)</div><table id="mt"></table><div class="sub" id="mnote"></div></div>
+ <div class="card"><div class="lbl">System architecture</div><div class="flow"><b>Sensor node</b>&rarr;<b>MQTT broker</b>&rarr;<b>Flask backend</b>&rarr;<b>ML model</b>&rarr;<b>Dashboard + alerts</b></div></div>
+</div>
+<p class="sub" style="text-align:center">AQI computed with the CPCB (India) sub-index method. Live data: Open-Meteo.com / Copernicus CAMS (model-based, virtual sensor node).</p>
+</main>
+<script>
+const chart=new Chart(document.getElementById('chart'),{type:'line',data:{labels:[],datasets:[
+ {label:'Measured AQI',data:[],borderColor:'#38bdf8',tension:.3,pointRadius:0},
+ {label:'Forecast (made the day before)',data:[],borderColor:'#f59e0b',borderDash:[6,4],tension:.3,pointRadius:0}]},
+ options:{animation:false,plugins:{legend:{labels:{color:'#8fa1c2'}}},scales:{x:{ticks:{color:'#8fa1c2',maxTicksLimit:8},grid:{color:'#223049'}},y:{ticks:{color:'#8fa1c2'},grid:{color:'#223049'}}}}});
+const $=id=>document.getElementById(id);
+let sel=null;
+async function tick(){
+ try{
+  const d=await (await fetch('/api/live'+(sel?'?city='+encodeURIComponent(sel):''))).json();
+  $('src').textContent='Transport: '+d.source; $('mode').textContent='Data: '+(d.data_mode||'-'); const cs=$('citysel'), cnames=d.cities.map(c=>c.city);
+  if(cs.options.length!==cnames.length){cs.innerHTML=cnames.map(n=>`<option>${n}</option>`).join('');}
+  if(d.city){cs.value=d.city; sel=d.city;}
+  $('ct').innerHTML='<tr><th>City</th><th>AQI now</th><th>Predicted tomorrow</th><th>Category (tomorrow)</th></tr>'+d.cities.map(c=>`<tr style="cursor:pointer" onclick="sel='${c.city}';tick()"><td>${c.city}</td><td style="color:${c.cat_now.color};font-weight:600">${Math.round(c.AQI)}</td><td style="color:${c.cat_pred.color};font-weight:600">${Math.round(c.predicted)}</td><td>${c.cat_pred.name}</td></tr>`).join('');
+  if(!d.latest) return;
+  const L=d.latest;
+  $('aqi').textContent=Math.round(L.AQI); $('aqi').style.color=d.cat_now.color;
+  $('cat').textContent=d.cat_now.name; $('cat').style.color=d.cat_now.color; $('date').textContent='Data day: '+L.date+' | received: '+L.ts;
+  $('pred').textContent=Math.round(L.predicted); $('pred').style.color=d.cat_pred.color;
+  $('pcat').textContent=d.cat_pred.name; $('pcat').style.color=d.cat_pred.color; $('advice').textContent=d.cat_pred.advice;
+  const names={'PM2.5':'PM2.5','PM10':'PM10','NO2':'NO2','SO2':'SO2','CO':'CO','O3':'O3'};
+  $('pol').innerHTML=Object.keys(names).map(k=>`<div><small>${names[k]}</small><b>${(+L[k]).toFixed(1)}</b></div>`).join('');
+  const dates=d.history.map(r=>r.date), nx=new Date(dates[dates.length-1]); nx.setDate(nx.getDate()+1);
+  chart.data.labels=[...dates, nx.toISOString().slice(0,10)];
+  chart.data.datasets[0].data=[...d.history.map(r=>r.AQI), null];
+  chart.data.datasets[1].data=[null, ...d.history.map(r=>r.predicted)]; chart.update();
+  const b=$('banner');
+  if(L.predicted>200){b.style.display='block';const c=L.predicted>300;b.className=c?'critical':'warning';
+   b.textContent=(c?'CRITICAL ALERT: ':'WARNING: ')+'tomorrow\'s AQI is predicted to be '+Math.round(L.predicted)+' ('+d.cat_pred.name+'). '+d.cat_pred.advice;}
+  else b.style.display='none';
+  $('alerts').innerHTML=d.alerts.length?d.alerts.map(a=>`<li><b>${a.level.toUpperCase()}</b> [${a.date}] ${a.message}</li>`).join(''):'<li style="color:var(--mut)">No alerts yet</li>';
+ }catch(e){$('src').textContent='Source: backend not reachable'}
+}
+async function metrics(){
+ const m=await (await fetch('/api/metrics')).json();
+ let h='<tr><th>Model</th><th>MAE</th><th>RMSE</th><th>R&sup2;</th></tr>';
+ for(const [k,v] of Object.entries(m.results)) h+=`<tr class="${k===m.best?'best':''}"><td>${k}</td><td>${v.MAE}</td><td>${v.RMSE}</td><td>${v.R2}</td></tr>`;
+ $('mt').innerHTML=h;
+ $('mnote').textContent=`Trained on ${m.train_rows} rows before ${m.split_date}; tested on ${m.test_rows} later rows. Best: ${m.best}.`;
+}
+metrics(); tick(); setInterval(tick,2000);
+</script></body></html>
